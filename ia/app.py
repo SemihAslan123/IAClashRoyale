@@ -5,6 +5,11 @@ import os
 import sys
 import numpy as np
 import random
+from mistralai import Mistral
+
+# --- CONFIGURATION MISTRAL ---
+MISTRAL_API_KEY = "6os21MrU9AqzCILKRPSkcMWFMuk05B9x"
+client = Mistral(api_key=MISTRAL_API_KEY)
 
 # --- IMPORTATION DES LOGIQUES IA ---
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -15,6 +20,32 @@ except ImportError as e:
     st.error(f"Erreur d'importation : Vérifiez que 'ia_predictive.py' et 'ia_generator.py' sont dans le même dossier. ({e})")
     st.stop()
 
+# --- FONCTION DE COACHING MISTRAL ---
+def get_ia_coaching(context_type, deck_a, deck_b, proba=None):
+    """Génère une explication stratégique via Mistral AI."""
+    if context_type == "prediction":
+        prompt = f"""
+        En tant qu'expert Clash Royale, explique pourquoi le Deck A a {proba}% de chances de gagner contre le Deck B.
+        Deck A : {', '.join(deck_a)}
+        Deck B : {', '.join(deck_b)}
+        Donne 3 points clés stratégiques (contre-attaques, synergies, win condition). Sois bref, pro et technique.
+        """
+    else:
+        prompt = f"""
+        En tant qu'expert Clash Royale, explique pourquoi ce deck de contre est efficace contre le deck adverse.
+        Deck Adverse : {', '.join(deck_a)}
+        Deck de Contre proposé : {', '.join(deck_b)}
+        Explique les interactions spécifiques (ex: quel sort contre quel bâtiment, quelle unité stoppe leur win condition).
+        """
+    try:
+        chat_response = client.chat.complete(
+            model="mistral-small-latest",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return chat_response.choices[0].message.content
+    except Exception as e:
+        return f"Le coach Mistral est indisponible (Erreur API). Détail : {e}"
+
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Clash Royale AI Suite", page_icon="👑", layout="wide")
 
@@ -24,6 +55,7 @@ st.markdown("""
     .stButton button { width: 100%; border-radius: 10px; }
     [data-testid="stMetricValue"] { font-size: 28px; color: #ffeb3b; }
     .main-title { text-align: center; color: #ffffff; background-color: #1e1e1e; padding: 20px; border-radius: 15px; margin-bottom: 25px; }
+    .coaching-box { background-color: #262730; padding: 20px; border-radius: 10px; border-left: 5px solid #ffeb3b; margin-top: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -61,9 +93,9 @@ for key in ["deck1", "deck2", "enemy_deck"]:
     if key not in st.session_state: st.session_state[key] = []
 
 def toggle_selection(deck_key, card_name):
-    # Si on modifie le deck adverse, on supprime l'ancien résultat généré
     if deck_key == "enemy_deck" and "gen_result" in st.session_state:
         del st.session_state["gen_result"]
+        if "gen_analysis" in st.session_state: del st.session_state["gen_analysis"]
         
     current_list = st.session_state[deck_key]
     if card_name in current_list:
@@ -80,15 +112,17 @@ def open_deck_selector(key):
     with col_random:
         if st.button("🎲 Aléatoire", key=f"rnd_{key}"):
             st.session_state[key] = random.sample([c['name'] for c in cards_data], 8)
-            if key == "enemy_deck" and "gen_result" in st.session_state:
-                del st.session_state["gen_result"]
+            if key == "enemy_deck":
+                if "gen_result" in st.session_state: del st.session_state["gen_result"]
+                if "gen_analysis" in st.session_state: del st.session_state["gen_analysis"]
             st.rerun()
             
     with col_clear:
         if st.button("🗑️ Vider", key=f"clr_{key}"):
             st.session_state[key] = []
-            if key == "enemy_deck" and "gen_result" in st.session_state:
-                del st.session_state["gen_result"]
+            if key == "enemy_deck":
+                if "gen_result" in st.session_state: del st.session_state["gen_result"]
+                if "gen_analysis" in st.session_state: del st.session_state["gen_analysis"]
             st.rerun()
             
     with col_close:
@@ -145,6 +179,15 @@ def show_prediction():
             mode, p1, p2 = analyse_combat(st.session_state.deck1, st.session_state.deck2)
             st.metric("Confiance Deck 1", f"{p1}%")
             st.metric("Confiance Deck 2", f"{p2}%")
+            
+            with st.expander("👨‍🏫 L'avis du Coach Mistral", expanded=True):
+                with st.spinner("Analyse stratégique en cours..."):
+                    winner = st.session_state.deck1 if p1 > p2 else st.session_state.deck2
+                    loser = st.session_state.deck2 if p1 > p2 else st.session_state.deck1
+                    analysis = get_ia_coaching("prediction", winner, loser, max(p1, p2))
+                    st.markdown(f"<div class='coaching-box'>{analysis}</div>", unsafe_allow_html=True)
+        else:
+            st.warning("Veuillez sélectionner 8 cartes pour chaque deck.")
 
 def show_generation():
     st.title("🛡️ Clash Royale - Générateur de Contre")
@@ -162,17 +205,21 @@ def show_generation():
         st.subheader("🟢 Meilleur Contre (IA)")
         if len(st.session_state.enemy_deck) == 8:
             if st.button("🚀 GÉNÉRER LE MEILLEUR CONTRE", type="primary", use_container_width=True):
-                with st.spinner("L'IA calcule..."):
+                with st.spinner("L'IA calcule le deck optimal..."):
                     counter_deck, win_prob = generate_counter_deck(st.session_state.enemy_deck)
                     st.session_state.gen_result = (counter_deck, win_prob)
+                    # Génération automatique du coaching après la création du deck
+                    st.session_state.gen_analysis = get_ia_coaching("generation", st.session_state.enemy_deck, counter_deck)
             
-            # Cette partie s'efface automatiquement si on modifie le deck adverse (grâce à del st.session_state["gen_result"])
             if "gen_result" in st.session_state:
                 res_deck, res_prob = st.session_state.gen_result
                 st.metric("Probabilité de victoire", f"{res_prob}%")
                 g_cols = st.columns(4)
                 for i, name in enumerate(res_deck):
                     with g_cols[i % 4]: st.image(name_to_url.get(name, ""), caption=name, use_container_width=True)
+                
+                if "gen_analysis" in st.session_state:
+                    st.markdown(f"<div class='coaching-box'><strong>👨‍🏫 Analyse du Coach :</strong><br><br>{st.session_state.gen_analysis}</div>", unsafe_allow_html=True)
             else:
                 st.info("Le deck adverse a été modifié. Veuillez générer un nouveau contre.")
         else:

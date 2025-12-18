@@ -6,42 +6,35 @@ import sys
 import numpy as np
 import random
 
-# Importation de la logique IA
+# --- IMPORTATION DES LOGIQUES IA ---
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from ia_predictive import analyse_combat
-except ImportError:
-    st.error("Erreur : Le fichier 'ia_predictive.py' est introuvable.")
+    from ia_generator import generate_counter_deck, all_cards
+except ImportError as e:
+    st.error(f"Erreur d'importation : Vérifiez que 'ia_predictive.py' et 'ia_generator.py' sont dans le même dossier. ({e})")
     st.stop()
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Clash Royale AI - Predictor", page_icon="👑", layout="wide")
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(page_title="Clash Royale AI Suite", page_icon="👑", layout="wide")
 
 # --- STYLE CSS ---
 st.markdown("""
     <style>
     .stButton button { width: 100%; border-radius: 10px; }
     [data-testid="stMetricValue"] { font-size: 28px; color: #ffeb3b; }
+    .main-title { text-align: center; color: #ffffff; background-color: #1e1e1e; padding: 20px; border-radius: 15px; margin-bottom: 25px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- INITIALISATION ---
-if "deck1" not in st.session_state: st.session_state.deck1 = []
-if "deck2" not in st.session_state: st.session_state.deck2 = []
-
-def toggle_selection(deck_key, card_name):
-    current_list = st.session_state[deck_key]
-    if card_name in current_list:
-        current_list.remove(card_name)
-    elif len(current_list) < 8:
-        current_list.append(card_name)
-
 # --- CHARGEMENT DES DONNÉES ---
 @st.cache_data
-def load_card_data():
+def load_global_data():
     path_images = "../dataset/clashroyale_cards.csv"
     path_names = "../dataset/cartes.csv"
     image_map = {}
+    official_cards = []
+    
     if os.path.exists(path_images):
         with open(path_images, mode='r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -50,7 +43,7 @@ def load_card_data():
                     urls = ast.literal_eval(row.get('iconUrls', "{}"))
                     if 'medium' in urls: image_map[row.get('name')] = urls['medium']
                 except: continue
-    official_cards = []
+
     if os.path.exists(path_names):
         with open(path_names, mode='r', encoding='utf-8') as f:
             reader = csv.reader(f)
@@ -59,34 +52,50 @@ def load_card_data():
                 if row:
                     name = row[1]
                     official_cards.append({"name": name, "image_url": image_map.get(name)})
-    return official_cards
+    return official_cards, image_map
 
-cards_data = load_card_data()
-name_to_url = {c["name"]: c["image_url"] for c in cards_data}
+cards_data, name_to_url = load_global_data()
 
-# --- MODALE DE SÉLECTION (Correction du nom ici) ---
+# --- INITIALISATION DES ETATS ---
+for key in ["deck1", "deck2", "enemy_deck"]:
+    if key not in st.session_state: st.session_state[key] = []
+
+def toggle_selection(deck_key, card_name):
+    # Si on modifie le deck adverse, on supprime l'ancien résultat généré
+    if deck_key == "enemy_deck" and "gen_result" in st.session_state:
+        del st.session_state["gen_result"]
+        
+    current_list = st.session_state[deck_key]
+    if card_name in current_list:
+        current_list.remove(card_name)
+    elif len(current_list) < 8:
+        current_list.append(card_name)
+
+# --- MODALE DE SÉLECTION ---
 @st.dialog("Configuration du Deck")
-def open_deck_selector(key): # Nom changé pour correspondre à l'appel
+def open_deck_selector(key):
     col_info, col_random, col_clear, col_close = st.columns([2, 2, 2, 1])
     with col_info: st.write(f"**Cartes : {len(st.session_state[key])}/8**")
     
     with col_random:
-        if st.button("🎲 Aléatoire", use_container_width=True):
-            # Choix de 8 cartes sans doublons
+        if st.button("🎲 Aléatoire", key=f"rnd_{key}"):
             st.session_state[key] = random.sample([c['name'] for c in cards_data], 8)
+            if key == "enemy_deck" and "gen_result" in st.session_state:
+                del st.session_state["gen_result"]
             st.rerun()
             
     with col_clear:
-        if st.button("🗑️ Vider", use_container_width=True):
+        if st.button("🗑️ Vider", key=f"clr_{key}"):
             st.session_state[key] = []
+            if key == "enemy_deck" and "gen_result" in st.session_state:
+                del st.session_state["gen_result"]
             st.rerun()
-
+            
     with col_close:
-        if st.button("✖️", type="primary", use_container_width=True): st.rerun()
+        if st.button("✖️", type="primary", key=f"cls_{key}"): st.rerun()
     
     st.divider()
-    search = st.text_input("🔍 Rechercher une carte...", key=f"s_{key}", label_visibility="collapsed")
-    
+    search = st.text_input("🔍 Rechercher une carte...", key=f"search_input_{key}")
     container = st.container(height=450) 
     with container:
         cols = st.columns(4)
@@ -96,58 +105,90 @@ def open_deck_selector(key): # Nom changé pour correspondre à l'appel
                 if c['image_url']: st.image(c['image_url'], width=80)
                 is_selected = c['name'] in st.session_state[key]
                 disabled = len(st.session_state[key]) >= 8 and not is_selected
-                st.button("✅" if is_selected else "Ajouter", key=f"b_{key}_{c['name']}", 
+                st.button("✅" if is_selected else "Ajouter", key=f"btn_{key}_{c['name']}", 
                           type="primary" if is_selected else "secondary",
                           use_container_width=True, disabled=disabled,
                           on_click=toggle_selection, args=(key, c['name']))
 
-# --- INTERFACE PRINCIPALE ---
-st.title("⚔️ Clash Royale - Analyseur de Deck IA")
+# --- PAGES ---
+def show_home():
+    st.markdown("<div class='main-title'><h1>👑 Clash Royale AI Suite</h1><p>Optimisez vos combats avec l'intelligence artificielle</p></div>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2, gap="large")
+    with col1:
+        st.info("### 🔮 Analyseur de Combat")
+        if st.button("Lancer la Prédiction", key="go_p"): st.session_state.current_page = "Prédiction" ; st.rerun()
+    with col2:
+        st.success("### 🛡️ Générateur de Contre")
+        if st.button("Lancer la Génération", key="go_g"): st.session_state.current_page = "Génération" ; st.rerun()
 
-col1, col2 = st.columns(2, gap="large")
+def show_prediction():
+    st.title("⚔️ Clash Royale - Analyseur Prédictif")
+    col1, col2 = st.columns(2, gap="large")
+    with col1:
+        st.subheader("🔵 Deck 1 (Allié)")
+        if st.button("Modifier Deck 1", icon="🎴", key="m1"): open_deck_selector("deck1")
+        if st.session_state.deck1:
+            d_cols = st.columns(4)
+            for i, name in enumerate(st.session_state.deck1):
+                with d_cols[i % 4]: st.image(name_to_url.get(name, ""), caption=name, use_container_width=True)
+    with col2:
+        st.subheader("🔴 Deck 2 (Adversaire)")
+        if st.button("Modifier Deck 2", icon="🎴", key="m2"): open_deck_selector("deck2")
+        if st.session_state.deck2:
+            d_cols = st.columns(4)
+            for i, name in enumerate(st.session_state.deck2):
+                with d_cols[i % 4]: st.image(name_to_url.get(name, ""), caption=name, use_container_width=True)
 
-with col1:
-    st.subheader("🔵 Deck 1 (Allié)")
-    if st.button("Modifier Deck 1", icon="🎴", key="m1"): open_deck_selector("deck1")
-    current_d1 = st.session_state.deck1
-    if current_d1:
-        d_cols = st.columns(4)
-        for i, name in enumerate(current_d1):
-            with d_cols[i % 4]: st.image(name_to_url.get(name, ""), caption=name, use_container_width=True)
-    else: st.write("Deck vide")
+    st.divider()
+    if st.button("🔮 PRÉDIRE LE VAINQUEUR", type="primary"):
+        if len(st.session_state.deck1) == 8 and len(st.session_state.deck2) == 8:
+            mode, p1, p2 = analyse_combat(st.session_state.deck1, st.session_state.deck2)
+            st.metric("Confiance Deck 1", f"{p1}%")
+            st.metric("Confiance Deck 2", f"{p2}%")
 
-with col2:
-    st.subheader("🔴 Deck 2 (Adversaire)")
-    if st.button("Modifier Deck 2", icon="🎴", key="m2"): open_deck_selector("deck2")
-    current_d2 = st.session_state.deck2
-    if current_d2:
-        d_cols = st.columns(4)
-        for i, name in enumerate(current_d2):
-            with d_cols[i % 4]: st.image(name_to_url.get(name, ""), caption=name, use_container_width=True)
-    else: st.write("Deck vide")
+def show_generation():
+    st.title("🛡️ Clash Royale - Générateur de Contre")
+    col_left, col_right = st.columns(2, gap="large")
+    
+    with col_left:
+        st.subheader("🔴 Deck Adverse à contrer")
+        if st.button("Modifier Deck Adverse", use_container_width=True, key="m_adv"): open_deck_selector("enemy_deck")
+        if st.session_state.enemy_deck:
+            d_cols = st.columns(4)
+            for i, name in enumerate(st.session_state.enemy_deck):
+                with d_cols[i % 4]: st.image(name_to_url.get(name, ""), caption=name, use_container_width=True)
 
-st.markdown("---")
+    with col_right:
+        st.subheader("🟢 Meilleur Contre (IA)")
+        if len(st.session_state.enemy_deck) == 8:
+            if st.button("🚀 GÉNÉRER LE MEILLEUR CONTRE", type="primary", use_container_width=True):
+                with st.spinner("L'IA calcule..."):
+                    counter_deck, win_prob = generate_counter_deck(st.session_state.enemy_deck)
+                    st.session_state.gen_result = (counter_deck, win_prob)
+            
+            # Cette partie s'efface automatiquement si on modifie le deck adverse (grâce à del st.session_state["gen_result"])
+            if "gen_result" in st.session_state:
+                res_deck, res_prob = st.session_state.gen_result
+                st.metric("Probabilité de victoire", f"{res_prob}%")
+                g_cols = st.columns(4)
+                for i, name in enumerate(res_deck):
+                    with g_cols[i % 4]: st.image(name_to_url.get(name, ""), caption=name, use_container_width=True)
+            else:
+                st.info("Le deck adverse a été modifié. Veuillez générer un nouveau contre.")
+        else:
+            st.write("En attente d'un deck adverse complet...")
 
-_, center_col, _ = st.columns([1, 2, 1])
-with center_col:
-    analyze_btn = st.button("🔮 PRÉDIRE LE VAINQUEUR", type="primary", use_container_width=True)
+# --- NAVIGATION ---
+if "current_page" not in st.session_state: st.session_state.current_page = "Accueil"
 
-if analyze_btn:
-    d1, d2 = st.session_state.deck1, st.session_state.deck2
-    if len(d1) != 8 or len(d2) != 8:
-        st.warning(f"⚠️ Sélectionnez 8 cartes par deck")
-    else:
-        with st.spinner("L'IA calcule..."):
-            mode, p1, p2 = analyse_combat(d1, d2)
-        
-        st.balloons()
-        st.markdown("### 📊 Résultats")
-        r1, r2, r3 = st.columns(3)
-        r1.metric("Moteur", "XGBoost", border=True)
-        r2.metric("Confiance Deck 1", f"{p1}%", border=True)
-        r3.metric("Confiance Deck 2", f"{p2}%", border=True)
-        st.progress(float(p1) / 100.0)
-        
-        if p1 > p2: st.success(f"### 🏆 Victoire prédite : **Deck 1**")
-        elif p2 > p1: st.error(f"### 🏆 Victoire prédite : **Deck 2**")
-        else: st.info("### 🤝 Match nul parfait.")
+st.sidebar.title("🎮 Navigation")
+page_choice = st.sidebar.radio("Aller vers :", ["Accueil", "Prédiction", "Génération"], 
+                               index=["Accueil", "Prédiction", "Génération"].index(st.session_state.current_page))
+
+if page_choice != st.session_state.current_page:
+    st.session_state.current_page = page_choice
+    st.rerun()
+
+if st.session_state.current_page == "Accueil": show_home()
+elif st.session_state.current_page == "Prédiction": show_prediction()
+elif st.session_state.current_page == "Génération": show_generation()

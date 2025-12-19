@@ -58,15 +58,12 @@ def train():
     print("🏗️ Entraînement XGBoost (Haute Précision)...")
     
     # Paramètres optimisés pour Clash Royale
-    # n_estimators=500 : Plus d'étapes de correction
-    # learning_rate=0.05 : On apprend doucement pour être précis
-    # tree_method='hist' : Très rapide sur de gros datasets
     model = xgb.XGBClassifier(
         n_estimators=500,
         learning_rate=0.05,
         max_depth=8,
         tree_method='hist',
-        device='cpu', # Change en 'cuda' si tu as une carte NVIDIA
+        device='cpu',
         random_state=42,
         verbosity=1
     )

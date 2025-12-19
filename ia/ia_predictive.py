@@ -28,7 +28,6 @@ def analyse_combat(deck1_names, deck2_names, precision=None):
     # On demande la probabilité
     probs = model.predict_proba([vector])[0]
     
-    # IMPORTANTE CORRECTION : On force le type 'float' pour Streamlit
     # probs[1] est la victoire du Deck 1, probs[0] celle du Deck 2
     p_win_d1 = float(round(probs[1] * 100, 2))
     p_win_d2 = float(round(probs[0] * 100, 2))

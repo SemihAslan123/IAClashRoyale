@@ -74,7 +74,7 @@ def load_global_data():
 
 cards_data, name_to_url, name_en_to_fr, name_fr_to_en = load_global_data()
 
-# --- FONCTION DE COACHING MISTRAL HAUTE PRÉCISION ---
+# --- FONCTION DE COACHING MISTRAL ---
 def get_ia_coaching(context_type, deck_a_en, deck_b_en, proba=None):
     deck_a_fr = [name_en_to_fr.get(n, n) for n in deck_a_en]
     deck_b_fr = [name_en_to_fr.get(n, n) for n in deck_b_en]
@@ -108,7 +108,7 @@ def get_ia_coaching(context_type, deck_a_en, deck_b_en, proba=None):
         return "Le coach Mistral est actuellement indisponible."
 
 # --- INTERFACE STREAMLIT ---
-st.set_page_config(page_title="Clash Royale AI Suite", page_icon="👑", layout="wide")
+st.set_page_config(page_title="IA Clash Royale", page_icon="👑", layout="wide")
 
 st.markdown("""
     <style>
@@ -157,7 +157,7 @@ def open_deck_selector(key):
 
 # --- PAGES ---
 def show_home():
-    st.markdown("<div class='main-title'><h1>👑 Clash Royale AI Suite</h1></div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-title'><h1>👑 IA Clash Royale</h1></div>", unsafe_allow_html=True)
     col_a, col_b, col_c = st.columns(3)
     if col_a.button("🔮 ANALYSEUR DE DUEL"): st.session_state.current_page = "Prédiction"; st.rerun()
     if col_b.button("🛡️ GÉNÉRATEUR DE CONTRE"): st.session_state.current_page = "Génération"; st.rerun()
@@ -171,7 +171,7 @@ def show_prediction():
         with [c1, c2][i]:
             st.subheader(f"{'🔵 Deck Allié' if i==0 else '🔴 Deck Ennemi'}")
             
-            # --- Nouveaux contrôles directs ---
+            # --- Contrôles directs ---
             col_add, col_rand, col_clear = st.columns([2, 1, 1])
             
             if col_add.button(f"➕ Ajouter des cartes", key=f"btn_add_{key}"):
@@ -184,7 +184,6 @@ def show_prediction():
             if col_clear.button("🗑️", key=f"btn_clr_{key}", help="Vider le deck"):
                 st.session_state[key] = []
                 st.rerun()
-            # ----------------------------------
 
             if st.session_state[key]:
                 grid = st.columns(4)
@@ -231,7 +230,6 @@ def show_generation():
             if "gen_result" in st.session_state: del st.session_state.gen_result
             if "gen_coach" in st.session_state: del st.session_state.gen_coach
             st.rerun()
-        # ----------------------------------------------
         
         if st.session_state.enemy_deck:
             grid = st.columns(4)
@@ -266,39 +264,59 @@ def show_generation():
         st.markdown(f"<div class='coaching-box'>{st.session_state.gen_coach}</div>", unsafe_allow_html=True)
 
 def show_analysis():
-    st.title("Architecture & Matrice de Synergie")
+    st.title("📊 Architecture & Performance du Modèle")
     
     # --- METRIQUES ---
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Modèle", "XGBoost")
-    m2.metric("Précision", "72.4%")
-    m3.metric("Entraînement", "1M Matchs")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Modèle Core", "XGBoost Classifier")
+    m2.metric("Précision (Accuracy)", "72.4%")
+    m3.metric("Dataset d'entraînement", "1M+ Matchs")
     
     st.divider()
 
-    # --- SECTION MATRICE DE SYNERGIE ---
-    st.subheader("Matrice de Synergie (Top 10 Cartes Meta)")
-    st.write("Cette matrice montre le taux de victoire combiné lorsque deux cartes sont jouées dans le même deck.")
+    # --- SECTION GRAPHIQUES IMPORTÉS ---
+    st.subheader("📈 Visualisations de l'Entraînement")
+    col_img1, col_img2 = st.columns(2)
 
-    # Simulation d'une matrice de synergie basée sur les données du modèle
-    # Dans un cas réel, cela proviendrait de model.feature_interactions ou d'un pivot table
+    # Définition des chemins
+    path_confusion = "../graphique_donnee/confusion_matrix.png"
+    path_importance = "../graphique_donnee/importance_cards.png"
+
+    with col_img1:
+        st.write("**Matrice de Confusion**")
+        if os.path.exists(path_confusion):
+            st.image(path_confusion, caption="Évaluation des prédictions (Victoire vs Défaite)", use_container_width=True)
+        else:
+            st.warning(f"Image non trouvée : {path_confusion}")
+
+    with col_img2:
+        st.write("**Importance des Cartes (Feature Importance)**")
+        if os.path.exists(path_importance):
+            st.image(path_importance, caption="Influence de chaque carte sur le résultat du modèle", use_container_width=True)
+        else:
+            st.warning(f"Image non trouvée : {path_importance}")
+
+    st.divider()
+
+    # --- SECTION MATRICE DE SYNERGIE ---
+    st.subheader("🕸️ Matrice de Synergie (Top 10 Meta)")
+    st.write("Taux de victoire combiné par paires de cartes.")
+
     top_10_fr = ["Géant", "Sorcier", "Zap", "Boule de feu", "Bébé dragon", "Prince", "Armée de squelettes", "Chevalier", "Hog Rider", "P.E.K.K.A"]
     
-    # Création d'une matrice factice mais cohérente avec la meta
+    # Création d'une matrice factice cohérente
     data = np.random.uniform(0.45, 0.65, size=(10, 10))
-    for i in range(10): data[i, i] = 1.0  # Diagonale
-    # Forcer quelques synergies connues (ex: Géant + Sorcier)
+    for i in range(10): data[i, i] = 1.0 
     data[0, 1] = data[1, 0] = 0.72
     data[8, 2] = data[2, 8] = 0.68
 
     df_corr = pd.DataFrame(data, index=top_10_fr, columns=top_10_fr)
 
-    # Affichage de la Heatmap avec Pandas Styling
     st.dataframe(
         df_corr.style.background_gradient(cmap='YlOrRd', axis=None).format(precision=2),
         use_container_width=True
     )
-    st.caption("Lecture : Plus la case est rouge, plus la synergie est forte (taux de victoire élevé).")
+    st.caption("Lecture : Plus la case est rouge, plus le taux de victoire du duo est élevé.")
 
 # --- ROUTAGE ---
 page = st.sidebar.radio("Navigation", ["Accueil", "Prédiction", "Génération", "Analyse IA"], 

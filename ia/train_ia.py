@@ -3,10 +3,15 @@ import numpy as np
 import xgboost as xgb
 import joblib
 import os
+from sklearn.metrics import confusion_matrix
 
 def train():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATASET_DIR = os.path.join(BASE_DIR, "..", "dataset")
+    GRAPH_DATA_DIR = os.path.join(BASE_DIR, "..", "graphique_donnee")
+
+    if not os.path.exists(GRAPH_DATA_DIR):
+        os.makedirs(GRAPH_DATA_DIR)
     
     path_combats = os.path.join(DATASET_DIR, "combats_joueurs.csv")
     path_cartes = os.path.join(DATASET_DIR, "cartes.csv")
@@ -71,8 +76,21 @@ def train():
     print("💾 Sauvegarde du modèle XGBoost...")
     joblib.dump(model, os.path.join(DATASET_DIR, "clash_model.pkl"))
     joblib.dump(all_cards, os.path.join(DATASET_DIR, "cards_list.pkl"))
+
+    # --- EXPORT POUR GRAPHIQUES PREDICTIFS ---
+    # 1. Feature Importance (Poids des cartes)
+    importances = model.feature_importances_
+    # On additionne l'importance "Allié" et "Ennemi" pour chaque carte
+    combined_importance = importances[:num_cards] + importances[num_cards:]
+    feat_df = pd.DataFrame({'card': all_cards, 'importance': combined_importance})
+    feat_df.sort_values(by='importance', ascending=False).to_csv(os.path.join(GRAPH_DATA_DIR, "feature_importance.csv"), index=False)
+
+    # 2. Matrice de Confusion (sur un échantillon pour la rapidité)
+    y_pred = model.predict(X[:10000])
+    cm = confusion_matrix(y[:10000], y_pred)
+    pd.DataFrame(cm).to_csv(os.path.join(GRAPH_DATA_DIR, "confusion_matrix.csv"), index=False)
     
-    print("✅ IA XGBoost prête !")
+    print("✅ IA XGBoost prête et graphique aussi !")
 
 if __name__ == "__main__":
     train()

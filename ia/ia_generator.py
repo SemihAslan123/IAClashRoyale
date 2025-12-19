@@ -1,10 +1,12 @@
 import joblib
 import numpy as np
+import pandas as pd
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "..", "dataset", "clash_model.pkl")
 CARDS_PATH = os.path.join(BASE_DIR, "..", "dataset", "cards_list.pkl")
+CARDS_INFO_PATH = os.path.join(BASE_DIR, "..", "dataset", "clashroyale_cards.csv")
 
 # Chargement du modèle et de la liste des cartes
 model = joblib.load(MODEL_PATH) if os.path.exists(MODEL_PATH) else None
@@ -19,6 +21,9 @@ def generate_counter_deck(enemy_deck):
     
     counter_deck = []
     current_win_prob = 0.0
+
+    # Historique graphique Waterfall
+    history = []
 
     # Algorithme glouton pour trouver les 8 meilleures cartes
     for slot in range(8):
@@ -50,5 +55,26 @@ def generate_counter_deck(enemy_deck):
         if best_card_for_slot:
             counter_deck.append(best_card_for_slot)
             current_win_prob = best_prob_for_slot
+            history.append({"slot": slot + 1, "card": best_card_for_slot, "prob": round(current_win_prob * 100, 2)})
+
+    GRAPH_DATA_DIR = os.path.join(BASE_DIR, "..", "graphique_donnee")
+    if not os.path.exists(GRAPH_DATA_DIR): os.makedirs(GRAPH_DATA_DIR)
+
+    # 1. Données Waterfall (Gain de Winrate)
+    pd.DataFrame(history).to_csv(os.path.join(GRAPH_DATA_DIR, "winrate_gain.csv"), index=False)
+
+    # 2. Données Distribution Elixir (Avant vs Après)
+    if os.path.exists(CARDS_INFO_PATH):
+        cards_df = pd.read_csv(CARDS_INFO_PATH)
+        cost_map = dict(zip(cards_df['name'], cards_df['elixirCost']))
+
+        original_costs = [cost_map.get(c, 0) for c in enemy_deck]
+        optimized_costs = [cost_map.get(c, 0) for c in counter_deck]
+
+        dist_df = pd.DataFrame({
+            'Type': ['Adversaire'] * 8 + ['Optimisé'] * 8,
+            'Cout': original_costs + optimized_costs
+        })
+        dist_df.to_csv(os.path.join(GRAPH_DATA_DIR, "elixir_dist.csv"), index=False)
 
     return counter_deck, round(current_win_prob * 100, 2)

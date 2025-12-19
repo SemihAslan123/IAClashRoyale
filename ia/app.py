@@ -62,8 +62,9 @@ st.markdown("""
 # --- CHARGEMENT DES DONNÉES ---
 @st.cache_data
 def load_global_data():
-    path_images = "../dataset/clashroyale_cards.csv"
-    path_names = "../dataset/cartes.csv"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    path_images = os.path.join(current_dir, "..", "dataset", "clashroyale_cards.csv")
+    path_names = os.path.join(current_dir, "..", "dataset", "cartes.csv")
     image_map = {}
     official_cards = []
     
